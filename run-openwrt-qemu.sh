@@ -7,8 +7,8 @@
 #
 # Usage: run-openwrt-qemu.sh                 normal run
 #        NOTIME32=1 run-openwrt-qemu.sh      with the seccomp filter
-# Environment: OPENWRT (tree, default ~/work/openwrt-ilp32), OUT (default openwrt/out[-notime32] in this
-#              tree), QEMU_CPU (default cortex-a53), BOOT_TIMEOUT (seconds, default 600),
+# Environment: OPENWRT (tree, default ~/work/openwrt-ilp32), OUT (default out[-notime32] next to this
+#              script), QEMU_CPU (default cortex-a53), BOOT_TIMEOUT (seconds, default 600),
 #              KERNEL (initramfs image; default: from the OpenWrt tree),
 #              BUILD_ONLY=1 (only build $OUT/extra.cpio with the toolchain of the OpenWrt tree, no boot),
 #              PREBUILT (directory with extra.cpio and extra-notime32.cpio from BUILD_ONLY runs: no toolchain
@@ -17,7 +17,7 @@
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 OPENWRT=${OPENWRT:-$HOME/work/openwrt-ilp32}
-ILP32_TEST=$(dirname "$HERE")
+SRC=$HERE/src
 NOTIME32=${NOTIME32:-0}
 OUT=${OUT:-$HERE/out$([ "$NOTIME32" = 1 ] && echo -notime32 || true)}
 RDINIT=$([ "$NOTIME32" = 1 ] && echo rdinit=/notime32-init || true)
@@ -38,7 +38,7 @@ else
 	export STAGING_DIR=$OPENWRT/staging_dir
 	CC="$TC/bin/$T-gcc"
 	CFLAGS="-O2 -Wall"
-	R=$ILP32_TEST/musl/test
+	R=$SRC
 	W=$OUT/root
 	mkdir -p "$W/tests" "$W/usr/lib"
 	# the C library tests, linked against the musl of the toolchain; the dynamic one runs with the libc of the image
@@ -46,12 +46,12 @@ else
 	$CC $CFLAGS -o "$W/tests/musl-test-dynamic" "$R/musl-test.c" -ldl -lpthread
 	$CC -shared -fPIC $CFLAGS -o "$W/usr/lib/libtlsmod.so" "$R/tlsmod.c"
 	if [ "$NOTIME32" = 1 ]; then
-		$CC -static $CFLAGS -o "$W/notime32-init" "$ILP32_TEST/qemu/notime32-init.c"
+		$CC -static $CFLAGS -o "$W/notime32-init" "$SRC/notime32-init.c"
 		ln -s init "$W/init.real"
 	else
 		# raw system calls without a C library, time32 included: only without the seccomp filter
 		$CC -static -nostdlib -ffreestanding -fno-stack-protector -fno-builtin -O2 -Wall -Wl,--build-id=none \
-			-o "$W/tests/syscall-test-ilp32" "$ILP32_TEST/tests/syscall-test.c" -lgcc
+			-o "$W/tests/syscall-test-ilp32" "$SRC/syscall-test.c" -lgcc
 	fi
 	"$TC/bin/$T-strip" "$W"/tests/* "$W/usr/lib/libtlsmod.so" ${RDINIT:+"$W/notime32-init"}
 	(cd "$W" && find . | LC_ALL=C sort | cpio -o -H newc --owner=0:0 --quiet) > "$OUT/extra.cpio"
